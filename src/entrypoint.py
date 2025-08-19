@@ -37,7 +37,7 @@ from time import sleep
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from telethon import TelegramClient, events
-from telethon.errors import ApiIdPublishedFloodError, RPCError
+from telethon.errors import ApiIdPublishedFloodError, RPCError, FloodWaitError
 from telethon.tl import types
 from random import sample
 
@@ -109,6 +109,12 @@ def init():
                 logger.warning('API_ID_PUBLISHED_FLOOD_ERROR occurred.')
                 break
             logger.warning(f'API_ID_PUBLISHED_FLOOD_ERROR occurred. Sleep for {sleep_for}s and retry.')
+            sleep(sleep_for)
+        except FloodWaitError as e:
+            if not api_keys:
+                logger.warning(f'FloodWaitError occurred: {e.seconds}s wait required. No more APIs to try.')
+                break
+            logger.warning(f'FloodWaitError occurred: {e.seconds}s wait required. Trying next API after {sleep_for}s.')
             sleep(sleep_for)
         except Exception as e:
             logger.critical('Unknown error occurred during login:', exc_info=e)
