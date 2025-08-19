@@ -42,6 +42,7 @@ from telethon.tl import types
 from random import sample
 
 from . import log, db, command
+from .scheduler.twitter_sub_queue import twitter_sub_queue
 from .monitor import Monitor
 from .i18n import i18n, ALL_LANGUAGES, get_commands_list
 from .parsing import tgraph
@@ -178,6 +179,8 @@ async def pre():
                           events.NewMessage(pattern=construct_command_matcher('/user_info')))
     bot.add_event_handler(command.administration.cmd_set_option,
                           events.NewMessage(pattern=construct_command_matcher('/set_option')))
+    bot.add_event_handler(command.twitter_queue.cmd_twitter_queue,
+                          events.NewMessage(pattern=construct_command_matcher('/twitter_queue')))
 
     # trigger bt inline query
     inline_query_matcher = rf'(@{env.bot_peer.username}\s+)?'

@@ -25,6 +25,10 @@ class DynamicTwitterScheduler:
         self.slot_assignments: Dict[int, List[int]] = {}  # slot_id -> [feed_ids]
         self.slot_tasks: Dict[int, Optional[asyncio.Task]] = {}  # slot_id -> task
         
+        # 批量添加缓冲区
+        self.pending_adds: List[int] = []  # 待分配的 feed_ids
+        self.batch_lock = asyncio.Lock()
+        
         # 初始化槽分配
         self._init_slots()
         

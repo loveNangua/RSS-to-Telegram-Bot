@@ -28,6 +28,7 @@ from cachetools import TTLCache
 from os import path
 
 from ... import db, web, env
+from ...scheduler.twitter_sub_queue import twitter_sub_queue, QueuedSubscription
 from ...aio_helper import run_async
 from ...i18n import i18n
 from .utils import update_interval, list_sub, filter_urls, logger, escape_html, \
@@ -179,10 +180,53 @@ async def subs(user_id: int,
         remaining_feed_urls = feed_urls
         failure = []
 
-    result = await asyncio.gather(*(sub(user_id, url, lang=lang) for url in remaining_feed_urls))
+    # 分离 Twitter 和非 Twitter 订阅
+    twitter_urls = []
+    normal_urls = []
+    
+    for url in remaining_feed_urls:
+        if twitter_sub_queue.is_twitter_feed(url if isinstance(url, str) else url[0]):
+            twitter_urls.append(url)
+        else:
+            normal_urls.append(url)
+    
+    # 立即处理普通订阅
+    normal_results = await asyncio.gather(*(sub(user_id, url, lang=lang) for url in normal_urls))
+    
+    # 将 Twitter 订阅加入队列
+    twitter_queued = []
+    for url in twitter_urls:
+        feed_url = url if isinstance(url, str) else url[0]
+        title = url[1] if isinstance(url, tuple) else None
+        
+        # 创建队列订阅对象
+        queued_sub = QueuedSubscription(
+            user_id=user_id,
+            feed_url=feed_url,
+            title=title
+        )
+        
+        # 添加到队列
+        if twitter_sub_queue.add_to_queue(queued_sub):
+            # 成功加入队列，创建成功结果
+            twitter_queued.append({
+                'url': feed_url,
+                'msg': i18n[lang]['sub_successful'] + ' (Twitter feed queued for processing)',
+                'sub': None  # 暂时设为 None，因为订阅是异步创建的
+            })
+        else:
+            # 加入队列失败
+            twitter_queued.append({
+                'url': feed_url,
+                'msg': 'ERROR: Failed to queue Twitter subscription',
+                'sub': None
+            })
+    
+    # 合并结果
+    result = normal_results + twitter_queued
 
-    success = tuple(sub_d for sub_d in result if sub_d['sub'])
-    failure.extend(sub_d for sub_d in result if not sub_d['sub'])
+    success = tuple(sub_d for sub_d in result if sub_d['sub'] or 'queued for processing' in sub_d.get('msg', ''))
+    failure.extend(sub_d for sub_d in result if not sub_d['sub'] and 'queued for processing' not in sub_d.get('msg', ''))
 
     success_msg = (
             (f'<b>{i18n[lang]["sub_successful"]}</b>\n' if success else '')
