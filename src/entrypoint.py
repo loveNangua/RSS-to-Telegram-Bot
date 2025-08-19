@@ -37,7 +37,8 @@ from time import sleep
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from telethon import TelegramClient, events
-from telethon.errors import ApiIdPublishedFloodError, RPCError, FloodWaitError
+from telethon.errors import ApiIdPublishedFloodError, RPCError
+from telethon.errors.rpcerrorlist import FloodWaitError
 from telethon.tl import types
 from random import sample
 
