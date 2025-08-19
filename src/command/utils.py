@@ -912,6 +912,31 @@ async def send_success_and_failure_msg(
         except (EntitiesTooLongError, MessageTooLongError):
             if reraise_on_error:
                 raise
+            
+            # 尝试截断消息
+            if len(msg_html) > 4096:
+                # 计算需要截断的位置
+                total_length = len(msg_html)
+                if success_msg and failure_msg:
+                    # 两个消息都存在，尽量保留两个消息的开头
+                    success_head = success_msg.split('\n', 1)[0] if '\n' in success_msg else success_msg[:100]
+                    failure_head = failure_msg.split('\n', 1)[0] if '\n' in failure_msg else failure_msg[:100]
+                    truncated_msg = f"{success_head}...\n\n{failure_head}...\n\n{i18n[lang]['message_too_long_prompt']}"
+                else:
+                    # 只有一个消息，截断保留开头
+                    msg_head = msg_html[:1000]
+                    truncated_msg = f"{msg_head}...\n\n{i18n[lang]['message_too_long_prompt']}"
+                
+                try:
+                    msg = await (message.edit(truncated_msg, parse_mode='html') if edit
+                                else message.respond(truncated_msg, parse_mode='html'))
+                    return msg if msg is not None else message
+                except (EntitiesTooLongError, MessageTooLongError):
+                    # 如果截断后还是太长，只发送简单提示
+                    simple_msg = f"Success: {success_count}\nFailed: {failure_count}\n\n{i18n[lang]['message_too_long_prompt']}"
+                    msg = await (message.edit(simple_msg, parse_mode='html') if edit
+                                else message.respond(simple_msg, parse_mode='html'))
+                    return msg if msg is not None else message
 
 
 def get_group_migration_help_msg(

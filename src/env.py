@@ -295,7 +295,7 @@ USER_AGENT: Final = os.environ.get('USER_AGENT') or f'RSStT/{__version__} RSS Re
 IPV6_PRIOR: Final = __bool_parser(os.environ.get('IPV6_PRIOR'))
 VERIFY_TLS: Final = __bool_parser(os.environ.get('VERIFY_TLS'), default_value=True)
 
-HTTP_TIMEOUT: Final = int(os.environ.get('HTTP_TIMEOUT') or 12)
+HTTP_TIMEOUT: Final = int(os.environ.get('HTTP_TIMEOUT') or 30)  # 增加默认超时时间到30秒
 HTTP_CONCURRENCY: Final = int(os.environ.get('HTTP_CONCURRENCY') or 1024)
 HTTP_CONCURRENCY_PER_HOST: Final = int(os.environ.get('HTTP_CONCURRENCY_PER_HOST') or 16)
 HTTP_MAX_LINE_SIZE: Final = int(os.environ.get('HTTP_MAX_LINE_SIZE') or 16384)

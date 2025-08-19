@@ -65,7 +65,9 @@ async def sub(user_id: int,
         if feed:
             _sub = await db.Sub.get_or_none(user=user_id, feed=feed)
         if not feed or feed.state == 0:
-            wf = await web.feed_get(feed_url, verbose=False)
+            # 为 Twitter 订阅使用更长的超时时间
+            timeout = 60 if twitter_sub_queue.is_twitter_feed(feed_url) else None
+            wf = await web.feed_get(feed_url, timeout=timeout, verbose=False)
             rss_d = wf.rss_d
             ret['status'] = wf.status
             ret['msg'] = wf.error and wf.error.i18n_message(lang)
@@ -190,11 +192,20 @@ async def subs(user_id: int,
         else:
             normal_urls.append(url)
     
-    # 立即处理普通订阅
-    normal_results = await asyncio.gather(*(sub(user_id, url, lang=lang) for url in normal_urls))
+    # 使用信号量限制并发订阅处理，避免阻塞主线程
+    semaphore = asyncio.Semaphore(5)  # 最多同时处理5个普通订阅
     
-    # 将 Twitter 订阅加入队列
+    async def process_with_semaphore(url):
+        async with semaphore:
+            return await sub(user_id, url, lang=lang)
+    
+    # 立即处理普通订阅
+    normal_results = await asyncio.gather(*(process_with_semaphore(url) for url in normal_urls))
+    
+    # 将 Twitter 订阅加入队列，并获取队列位置信息
     twitter_queued = []
+    queue_position = 1
+    
     for url in twitter_urls:
         feed_url = url if isinstance(url, str) else url[0]
         title = url[1] if isinstance(url, tuple) else None
@@ -208,32 +219,51 @@ async def subs(user_id: int,
         
         # 添加到队列
         if twitter_sub_queue.add_to_queue(queued_sub):
+            # 获取队列状态信息
+            queue_status = twitter_sub_queue.get_queue_status()
+            estimated_time = (queue_status['queue_size'] // 10) * 15 + (queue_status['queue_size'] % 10) * 0.5
+            
             # 成功加入队列，创建成功结果
             twitter_queued.append({
                 'url': feed_url,
-                'msg': i18n[lang]['sub_successful'] + ' (Twitter feed queued for processing)',
-                'sub': None  # 暂时设为 None，因为订阅是异步创建的
+                'msg': i18n[lang]['sub_successful'] + f' (Twitter feed queued at position #{queue_position}, estimated processing time: {estimated_time:.1f} minutes)',
+                'sub': None,  # 暂时设为 None，因为订阅是异步创建的
+                'queued': True
             })
+            queue_position += 1
         else:
             # 加入队列失败
             twitter_queued.append({
                 'url': feed_url,
                 'msg': 'ERROR: Failed to queue Twitter subscription',
-                'sub': None
+                'sub': None,
+                'queued': False
             })
     
     # 合并结果
     result = normal_results + twitter_queued
 
-    success = tuple(sub_d for sub_d in result if sub_d['sub'] or 'queued for processing' in sub_d.get('msg', ''))
-    failure.extend(sub_d for sub_d in result if not sub_d['sub'] and 'queued for processing' not in sub_d.get('msg', ''))
+    success = tuple(sub_d for sub_d in result if sub_d['sub'] or sub_d.get('queued', False))
+    failure.extend(sub_d for sub_d in result if not sub_d['sub'] and not sub_d.get('queued', False))
 
     success_msg = (
             (f'<b>{i18n[lang]["sub_successful"]}</b>\n' if success else '')
-            + '\n'.join(f'<a href="{sub_d["sub"].feed.link}">'
-                        f'{escape_html(sub_d["sub"].title or sub_d["sub"].feed.title)}</a>'
-                        for sub_d in success)
+            + '\n'.join(
+                f'<a href="{sub_d["sub"].feed.link}">'
+                f'{escape_html(sub_d["sub"].title or sub_d["sub"].feed.title)}</a>'
+                for sub_d in success if sub_d["sub"]
+            )
     )
+    
+    # 为队列中的 Twitter 订阅添加单独的成功消息
+    queued_success = [sub_d for sub_d in success if sub_d.get('queued', False)]
+    if queued_success:
+        if success_msg:
+            success_msg += '\n\n'
+        success_msg += '\n'.join(
+            f'{escape_html(sub_d["url"])} ({sub_d["msg"]})'
+            for sub_d in queued_success
+        )
     failure_msg = (
             (f'<b>{i18n[lang]["sub_failed"]}</b>\n' if failure else '')
             + '\n'.join(f'{escape_html(sub_d["url"])} ({sub_d["msg"]})' for sub_d in failure)

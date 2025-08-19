@@ -34,7 +34,9 @@ class TwitterSubscriptionQueue:
         self.queue: deque[QueuedSubscription] = deque()
         self.processing = False
         self.processing_task: Optional[asyncio.Task] = None
-        self.delay_between_subs = 30  # 订阅之间的延迟（秒）
+        self.delay_between_groups = 15 * 60  # 组间延迟（15分钟）
+        self.delay_within_group = 30  # 组内延迟（30秒）
+        self.group_size = 10  # 每组订阅数量
         self.max_concurrent_initial_checks = 3  # 最大并发初始检查数
         
     def is_twitter_feed(self, url: str) -> bool:
@@ -67,33 +69,47 @@ class TwitterSubscriptionQueue:
         """处理订阅队列"""
         logger.info(f"Starting Twitter subscription queue processing with {len(self.queue)} items")
         
+        group_count = 0
+        
         while self.queue:
-            # 获取下一批订阅（最多 max_concurrent_initial_checks 个）
-            batch = []
-            batch_size = min(self.max_concurrent_initial_checks, len(self.queue))
+            group_count += 1
+            logger.info(f"Processing group {group_count} of Twitter subscriptions")
             
-            for _ in range(batch_size):
-                if self.queue:
-                    batch.append(self.queue.popleft())
+            # 处理一组订阅
+            processed_in_group = 0
+            while processed_in_group < self.group_size and self.queue:
+                # 获取下一批订阅（最多 max_concurrent_initial_checks 个）
+                batch = []
+                batch_size = min(self.max_concurrent_initial_checks, len(self.queue), self.group_size - processed_in_group)
+                
+                for _ in range(batch_size):
+                    if self.queue:
+                        batch.append(self.queue.popleft())
+                
+                if not batch:
+                    break
+                
+                # 并发处理这一批
+                logger.info(f"Processing batch of {len(batch)} Twitter subscriptions in group {group_count}")
+                tasks = []
+                
+                for sub in batch:
+                    task = asyncio.create_task(self._process_single_subscription(sub))
+                    tasks.append(task)
+                
+                # 等待这批完成
+                await asyncio.gather(*tasks, return_exceptions=True)
+                processed_in_group += len(batch)
+                
+                # 如果组内还有更多订阅，等待组内延迟
+                if processed_in_group < self.group_size and self.queue:
+                    logger.info(f"Waiting {self.delay_within_group}s before next batch in group {group_count}...")
+                    await asyncio.sleep(self.delay_within_group)
             
-            if not batch:
-                break
-            
-            # 并发处理这一批
-            logger.info(f"Processing batch of {len(batch)} Twitter subscriptions")
-            tasks = []
-            
-            for sub in batch:
-                task = asyncio.create_task(self._process_single_subscription(sub))
-                tasks.append(task)
-            
-            # 等待这批完成
-            await asyncio.gather(*tasks, return_exceptions=True)
-            
-            # 如果还有更多订阅，等待延迟
+            # 如果还有更多订阅，等待组间延迟
             if self.queue:
-                logger.info(f"Waiting {self.delay_between_subs}s before next batch...")
-                await asyncio.sleep(self.delay_between_subs)
+                logger.info(f"Group {group_count} completed. Waiting {self.delay_between_groups // 60} minutes before next group...")
+                await asyncio.sleep(self.delay_between_groups)
         
         self.processing = False
         logger.info("Twitter subscription queue processing completed")
@@ -153,7 +169,9 @@ class TwitterSubscriptionQueue:
         return {
             'queue_size': len(self.queue),
             'processing': self.processing,
-            'delay_between_subs': self.delay_between_subs,
+            'delay_between_groups': self.delay_between_groups,
+            'delay_within_group': self.delay_within_group,
+            'group_size': self.group_size,
             'max_concurrent_initial_checks': self.max_concurrent_initial_checks
         }
 
