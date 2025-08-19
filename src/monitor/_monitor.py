@@ -35,6 +35,7 @@ from ..helpers.bg import bg
 from ..helpers.singleton import Singleton
 from ..helpers.timeout import BatchTimeout
 from ..parsing.utils import ensure_plain
+from ..scheduler.twitter_scheduler import twitter_scheduler
 
 
 class TaskState(enum.IntFlag):
@@ -59,6 +60,9 @@ class Monitor(Singleton):
 
         # update _lock_up_period on demand
         db.effective_utils.EffectiveOptions.add_set_callback('minimal_interval', self._update_lock_up_period_cb)
+        
+        # Twitter scheduler initialization
+        self._twitter_scheduler_initialized = False
 
     def _update_lock_up_period_cb(self, key: str, value: int, expected_key: str = 'minimal_interval'):
         if key != expected_key:
@@ -212,32 +216,78 @@ class Monitor(Singleton):
     def submit_feed(self, feed: FEED_OR_ID, description: str = ''):
         self.submit_feeds((feed,), description)
 
+    async def _init_twitter_scheduler(self):
+        """初始化 Twitter 调度器"""
+        if self._twitter_scheduler_initialized:
+            return
+            
+        # 获取所有 Twitter 订阅
+        all_feeds = await db.Feed.filter(state=1).all()
+        twitter_feeds = [feed for feed in all_feeds if twitter_scheduler.is_twitter_feed(feed.link)]
+        
+        # 添加到调度器
+        for feed in twitter_feeds:
+            await twitter_scheduler.add_feed(feed.id, feed.link)
+        
+        # 启动所有时间槽任务
+        for slot_id in range(twitter_scheduler.slot_count):
+            await twitter_scheduler.start_slot_task(slot_id, self._check_twitter_feed)
+        
+        self._twitter_scheduler_initialized = True
+        logger.info(f"Twitter scheduler initialized with {len(twitter_feeds)} feeds")
+        
+        # 打印统计信息
+        stats = twitter_scheduler.get_stats()
+        logger.info(f"Twitter scheduler stats: {stats}")
+
+    async def _check_twitter_feed(self, feed_id: int, feed_url: str):
+        """检查 Twitter 订阅（由调度器调用）"""
+        feed = await db.Feed.get_or_none(id=feed_id)
+        if not feed or feed.state != 1:
+            return
+            
+        now = datetime.now(timezone.utc)
+        await self._do_monitor_a_feed(feed, now)
+
     async def run_periodic_task(self):
         self._stat.print_summary()
         Notifier.on_periodic_task()
+        
+        # 初始化 Twitter 调度器（仅第一次）
+        if not self._twitter_scheduler_initialized:
+            await self._init_twitter_scheduler()
+        
         feed_ids_set = db.effective_utils.EffectiveTasks.get_tasks()
         if not feed_ids_set:
             return
 
+        # 过滤掉 Twitter 订阅（它们由调度器处理）
+        non_twitter_feed_ids = []
+        for feed_id in feed_ids_set:
+            feed = await db.Feed.get_or_none(id=feed_id)
+            if feed and not twitter_scheduler.is_twitter_feed(feed.link):
+                non_twitter_feed_ids.append(feed_id)
+        
         # Assuming the method is called once per minute, let's divide feed_ids into 60 chunks and submit one by one
         # every second.
-        feed_ids: list[int] = list(feed_ids_set)
+        feed_ids: list[int] = non_twitter_feed_ids
         feed_count = len(feed_ids)
-        chunk_count = 60
-        larger_chunk_count = feed_count % chunk_count
-        smaller_chunk_size = feed_count // chunk_count
-        smaller_chunk_count = chunk_count - larger_chunk_count
-        larger_chunk_size = smaller_chunk_size + 1
-        pos = 0
-        for delay, count in enumerate(chain(
-                repeat(larger_chunk_size, larger_chunk_count),
-                repeat(smaller_chunk_size, smaller_chunk_count)
-        )):
-            if count == 0:
-                break
-            env.loop.call_later(delay, self.submit_feeds, feed_ids[pos:pos + count], 'periodic task')
-            pos += count
-        assert pos == feed_count
+        if feed_count > 0:
+            chunk_count = 60
+            larger_chunk_count = feed_count % chunk_count
+            smaller_chunk_size = feed_count // chunk_count
+            smaller_chunk_count = chunk_count - larger_chunk_count
+            larger_chunk_size = smaller_chunk_size + 1
+            pos = 0
+            for delay, count in enumerate(chain(
+                    repeat(larger_chunk_size, larger_chunk_count),
+                    repeat(smaller_chunk_size, smaller_chunk_count)
+            )):
+                if count == 0:
+                    break
+                env.loop.call_later(delay, self.submit_feeds, feed_ids[pos:pos + count], 'periodic task')
+                pos += count
+            assert pos == feed_count
 
     async def _do_monitor_a_feed(self, feed: db.Feed, now: datetime):
         """

@@ -47,6 +47,7 @@ from .i18n import i18n, ALL_LANGUAGES, get_commands_list
 from .parsing import tgraph
 from .helpers.bg import bg
 from .helpers.queue import queued
+from .web.render_webhook import render_webhook
 
 # log
 logger = log.getLogger('RSStT')
@@ -82,6 +83,10 @@ def init():
         from . import redirect_server
 
         pre_tasks.append(loop.create_task(redirect_server.run(port=env.PORT)))
+    
+    # 启动 Render webhook Flask 服务器
+    if os.getenv('RENDER_NAME'):
+        render_webhook.start_flask_server(port=10000)
 
     if env.TOKEN.lower() == 'test':
         # no login, just for test
@@ -116,6 +121,9 @@ def init():
     env.bot_peer = loop.run_until_complete(bot.get_me(input_peer=False))
     env.bot_input_peer = loop.run_until_complete(bot.get_me(input_peer=True))
     env.bot_id = env.bot_peer.id
+    
+    # 设置 Render webhook
+    render_webhook.set_bot_token(env.TOKEN)
 
 
 async def pre():

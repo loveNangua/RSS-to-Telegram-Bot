@@ -263,6 +263,13 @@ async def update_interval(feed: Union[db.Feed, db.Sub, int]):
 
     if feed is None:
         return
+    
+    # Twitter 调度器处理
+    from ..scheduler.twitter_scheduler import twitter_scheduler
+    if twitter_scheduler.is_twitter_feed(feed.link):
+        # Twitter 订阅由调度器管理，不更新 interval
+        logger.debug(f"Twitter feed {feed.id} is managed by scheduler, skipping interval update")
+        return
 
     default_interval = db.EffectiveOptions.default_interval
     curr_interval = feed.interval or default_interval
