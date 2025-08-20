@@ -35,9 +35,27 @@ FEED_ACCEPT: Final = 'application/rss+xml, application/rdf+xml, application/atom
                      'application/xml;q=0.9, text/xml;q=0.8, text/*;q=0.7, application/*;q=0.6'
 
 
+def is_twitter_feed(url: str) -> bool:
+    """检测是否为Twitter RSSHub URL"""
+    twitter_patterns = [
+        '/twitter/user/',
+        '/twitter/list/', 
+        '/twitter/search/',
+        '/rsshub.app/twitter/',
+        'rsshub.app/twitter/user',
+        'rsshub.app/twitter/list',
+        'rsshub.app/twitter/search',
+    ]
+    url_lower = url.lower()
+    return any(pattern in url_lower for pattern in twitter_patterns)
+
+
 async def feed_get(url: str, timeout: Optional[float] = sentinel, web_semaphore: Union[bool, asyncio.Semaphore] = None,
                    headers: Optional[dict] = None, verbose: bool = True) -> WebFeed:
     ret = WebFeed(url=url, ori_url=url)
+    
+    # 检测是否为Twitter订阅
+    is_twitter = is_twitter_feed(url)
 
     log_level = log.WARNING if verbose else log.DEBUG
     _headers = {}
@@ -67,7 +85,7 @@ async def feed_get(url: str, timeout: Optional[float] = sentinel, web_semaphore:
 
         if rss_content is None:
             status_caption = f'{resp.status}' + (f' {resp.reason}' if resp.reason else '')
-            ret.error = WebError(error_name='status code error', status=status_caption, url=url, log_level=log_level)
+            ret.error = WebError(error_name='status code error', status=resp.status, url=url, log_level=log_level, is_twitter=is_twitter)
             return ret
 
         with BytesIO(rss_content) as rss_content_io:
@@ -82,21 +100,21 @@ async def feed_get(url: str, timeout: Optional[float] = sentinel, web_semaphore:
             # feed.description cannot be used to determine if this is likely to be a feed since HTML tag <body> may be
             # considered to be the description of the "feed"
             if not rss_d.entries and (rss_d.bozo or not (rss_d.feed.get('link') or rss_d.feed.get('updated'))):
-                ret.error = WebError(error_name='feed invalid', url=resp.url, log_level=log_level)
+                ret.error = WebError(error_name='feed invalid', url=resp.url, log_level=log_level, is_twitter=is_twitter)
                 return ret
             rss_d.feed['title'] = resp.url  # instead of `rss_d.feed.title = resp.url`, which does not affect the dict
 
         ret.rss_d = rss_d
     except aiohttp.InvalidURL:
-        ret.error = WebError(error_name='URL invalid', url=url, log_level=log_level)
+        ret.error = WebError(error_name='URL invalid', url=url, log_level=log_level, is_twitter=is_twitter)
     except (asyncio.TimeoutError,
             aiohttp.ClientError,
             SSLError,
             OSError,
             ConnectionError,
             TimeoutError) as e:
-        ret.error = WebError(error_name='network error', url=url, base_error=e, log_level=log_level)
+        ret.error = WebError(error_name='network error', url=url, base_error=e, log_level=log_level, is_twitter=is_twitter)
     except Exception as e:
-        ret.error = WebError(error_name='internal error', url=url, base_error=e, log_level=log.ERROR)
+        ret.error = WebError(error_name='internal error', url=url, base_error=e, log_level=log.ERROR, is_twitter=is_twitter)
 
     return ret

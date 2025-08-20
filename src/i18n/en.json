@@ -216,6 +216,45 @@
         "set_sub_limit_to": "Set subscription quantity limit to…",
         "cmd_set_sub_limit_prompt_html": "Command usage: <code>/set_sub_limit user_id subscription_quantity_limit</code>\n\nNote: <code>subscription_quantity_limit</code> must be a integer, <code>-1</code> for unlimited."
     },
+    "l10n_twitter_scheduler": {
+        "twitter_scheduler_status": "Twitter Scheduler Status",
+        "total_feeds": "Total Feeds",
+        "time_slots": "Time Slots",
+        "max_feeds_per_slot": "max feeds per slot",
+        "active_slots": "Active Slots",
+        "slot_interval": "Slot Interval",
+        "minutes": "minutes",
+        "full_cycle": "Full Cycle",
+        "slot_details": "Slot Details",
+        "feeds": "feeds",
+        "check_every": "check every",
+        "seconds": "s"
+    },
+    "l10n_twitter_queue": {
+        "twitter_subscription_queue_status": "Twitter Subscription Queue Status",
+        "queue_size": "Queue Size",
+        "processing_status": "Processing",
+        "yes": "Yes",
+        "no": "No",
+        "delay_within_group": "Delay Within Group",
+        "delay_between_groups": "Delay Between Groups",
+        "group_size": "Group Size",
+        "max_concurrent_checks": "Max Concurrent Checks",
+        "status_summary": "Status Summary",
+        "queued": "Queued",
+        "currently_processing": "Processing",
+        "success": "Success",
+        "failed": "Failed",
+        "detailed_view": "Detailed View",
+        "history_size": "History Size",
+        "use_detailed_cmd": "Use /twitter_queue detailed to see subscription details",
+        "subscription_details": "Subscription Details",
+        "detail_status": "Status",
+        "detail_user": "User",
+        "added": "Added",
+        "error": "Error",
+        "and_more": "... and {count} more subscriptions"
+    },
     "l10n_cmd_descriptions": {
         "commands": "Commands",
         "cmd_description_sub": "Subscribe",
@@ -234,6 +273,8 @@
         "cmd_description_test": "Test (bot manager only)",
         "cmd_description_set_option": "Set bot options (bot manager only)",
         "cmd_description_user_info": "View/modify user info (bot manager only)",
+        "cmd_description_twitter_queue": "View Twitter subscription queue status (bot manager only)",
+        "cmd_description_twitter_scheduler_status": "View Twitter scheduler status (bot manager only)",
         "usage_in_channel_or_group_prompt_html": "<b>Usage in channel/group:</b>\n1. Add the bot to your channel/group.\n2a. Directly send commands <b>in the channel/group</b>.\n2b. Or alternatively, you can send commands like <code>/sub @username https://example.com</code> or <code>/sub -10010000000000 https://example.com</code> <b>in the private chat with the bot</b>.\n(<code>@username</code> is the channel/group's username, <code>@</code> is required; <code>-10010000000000</code> is the channel/group's ID, it must start with <code>-100</code>)"
     }
 }

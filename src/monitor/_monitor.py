@@ -36,6 +36,7 @@ from ..helpers.singleton import Singleton
 from ..helpers.timeout import BatchTimeout
 from ..parsing.utils import ensure_plain
 from ..scheduler.twitter_scheduler import twitter_scheduler
+from ..web.utils import ErrorType
 
 
 class TaskState(enum.IntFlag):
@@ -229,9 +230,8 @@ class Monitor(Singleton):
         for feed in twitter_feeds:
             await twitter_scheduler.add_feed(feed.id, feed.link)
         
-        # 启动所有时间槽任务
-        for slot_id in range(twitter_scheduler.slot_count):
-            await twitter_scheduler.start_slot_task(slot_id, self._check_twitter_feed)
+        # 启动串行调度器
+        await twitter_scheduler.start_scheduler(self._check_twitter_feed)
         
         self._twitter_scheduler_initialized = True
         logger.info(f"Twitter scheduler initialized with {len(twitter_feeds)} feeds")
@@ -333,6 +333,9 @@ class Monitor(Singleton):
 
             if rss_d is None:  # error occurred
                 new_error_count = feed.error_count + 1
+                is_twitter = twitter_scheduler.is_twitter_feed(feed.link)
+                
+                # 检查是否达到最大错误次数
                 if new_error_count >= 100:
                     logger.error(
                         f'Deactivated due to too many ({new_error_count}) errors (current: {wf.error}): {feed.link}'
@@ -340,17 +343,35 @@ class Monitor(Singleton):
                     await Notifier(feed=feed, subs=subs, reason=wf.error).notify_all()
                     stat.failed()
                     return
-                if new_error_count >= 10:  # too much error, defer next check
+                
+                # 使用智能重试延迟策略
+                if new_error_count >= 10:  # too many errors, defer next check
                     interval = feed.interval or db.EffectiveOptions.default_interval
-                    # Equals: interval * (2 ** exp), clamp to 1 day
-                    next_check_delay = min(interval << (new_error_count // 10), 1440)
+                    
+                    # 使用新的状态码感知延迟计算
+                    if wf.error and hasattr(wf.error, 'get_retry_delay'):
+                        next_check_delay = wf.error.get_retry_delay(new_error_count, interval)
+                    else:
+                        # 回退到标准指数退避
+                        next_check_delay = min(interval << (new_error_count // 10), 1440)
+                    
                     new_next_check_time = now + timedelta(minutes=next_check_delay)
-                logger.log(
-                    logging.WARNING
-                    if new_error_count % 20 == 0
-                    else logging.DEBUG,
-                    f'Fetch failed ({new_error_count}th retry, {wf.error}): {feed.link}',
-                )
+                    
+                    # 记录详细的错误信息和延迟策略
+                    error_type_name = getattr(wf.error, 'error_type', ErrorType.UNKNOWN)
+                    error_type_name = error_type_name.name if hasattr(error_type_name, 'name') else str(error_type_name)
+                    logger.log(
+                        logging.WARNING if new_error_count % 20 == 0 else logging.DEBUG,
+                        f'Fetch failed ({new_error_count}th retry, error_type: {error_type_name}, '
+                        f'next_check_delay: {next_check_delay}min, {wf.error}): {feed.link}'
+                    )
+                else:
+                    # 少量错误时的标准日志记录
+                    logger.log(
+                        logging.WARNING if new_error_count % 20 == 0 else logging.DEBUG,
+                        f'Fetch failed ({new_error_count}th retry, {wf.error}): {feed.link}',
+                    )
+                
                 stat.failed()
                 return
 

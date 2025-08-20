@@ -216,6 +216,45 @@
         "set_sub_limit_to": "将订阅数量限制设置为…",
         "cmd_set_sub_limit_prompt_html": "命令用法: <code>/set_sub_limit 用户ID 订阅数量限制</code>\n\n注: <code>订阅数量限制</code> 必须是整数，<code>-1</code> 代表无限。"
     },
+    "l10n_twitter_scheduler": {
+        "twitter_scheduler_status": "Twitter 调度器状态",
+        "total_feeds": "订阅源总数",
+        "time_slots": "时间槽数量",
+        "max_feeds_per_slot": "每个时间槽最多订阅源数",
+        "active_slots": "活跃时间槽",
+        "slot_interval": "时间槽间隔",
+        "minutes": "分钟",
+        "full_cycle": "完整周期",
+        "slot_details": "时间槽详情",
+        "feeds": "个订阅源",
+        "check_every": "每",
+        "seconds": "秒检查一次"
+    },
+    "l10n_twitter_queue": {
+        "twitter_subscription_queue_status": "Twitter 订阅队列状态",
+        "queue_size": "队列大小",
+        "processing_status": "处理中",
+        "yes": "是",
+        "no": "否",
+        "delay_within_group": "组内延迟",
+        "delay_between_groups": "组间延迟",
+        "group_size": "分组大小",
+        "max_concurrent_checks": "最大并发检查数",
+        "status_summary": "状态摘要",
+        "queued": "等待中",
+        "currently_processing": "处理中",
+        "success": "成功",
+        "failed": "失败",
+        "detailed_view": "详细视图",
+        "history_size": "历史记录大小",
+        "use_detailed_cmd": "使用 /twitter_queue detailed 查看订阅详情",
+        "subscription_details": "订阅详情",
+        "detail_status": "状态",
+        "detail_user": "用户",
+        "added": "添加时间",
+        "error": "错误",
+        "and_more": "...还有 {count} 个订阅"
+    },
     "l10n_cmd_descriptions": {
         "commands": "命令",
         "cmd_description_sub": "添加订阅",
@@ -234,6 +273,8 @@
         "cmd_description_test": "测试 (仅 bot 管理员)",
         "cmd_description_set_option": "更改 bot 配置 (仅 bot 管理员)",
         "cmd_description_user_info": "查看/修改用户信息 (仅 bot 管理员)",
+        "cmd_description_twitter_queue": "查看 Twitter 订阅队列状态 (仅 bot 管理员)",
+        "cmd_description_twitter_scheduler_status": "查看 Twitter 调度器状态 (仅 bot 管理员)",
         "usage_in_channel_or_group_prompt_html": "<b>在频道/群组里的使用方式:</b>\n1. 将 bot 添加到频道/群组里。\n2a. 直接<b>在频道/群组里</b>发送命令。\n2b. 或者，你也可以<b>在和 bot 的私聊里</b>像这样发送命令: <code>/sub @username https://example.com</code> 或 <code>/sub -10010000000000 https://example.com</code>。\n(<code>@username</code> 是频道/群组的用户名，<code>@</code> 是不可缺少的；<code>-10010000000000</code> 是频道/群组的 ID，必须以 <code>-100</code> 开头)"
     }
 }

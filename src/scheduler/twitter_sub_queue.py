@@ -8,12 +8,22 @@ import logging
 import time
 from typing import List, Dict, Optional
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import datetime
+from enum import Enum
 
 from .. import log
 from ..db import Sub, Feed
 
 logger = log.getLogger('RSStT.twitter.queue')
+
+
+class SubscriptionStatus(Enum):
+    """订阅状态"""
+    QUEUED = "queued"
+    PROCESSING = "processing"
+    SUCCESS = "success"
+    FAILED = "failed"
 
 
 @dataclass
@@ -25,6 +35,11 @@ class QueuedSubscription:
     interval: Optional[int] = None
     silent: bool = False
     subtitle: str = ""
+    status: SubscriptionStatus = SubscriptionStatus.QUEUED
+    added_time: datetime = field(default_factory=datetime.now)
+    started_time: Optional[datetime] = None
+    completed_time: Optional[datetime] = None
+    error_message: Optional[str] = None
 
 
 class TwitterSubscriptionQueue:
@@ -38,6 +53,8 @@ class TwitterSubscriptionQueue:
         self.delay_within_group = 30  # 组内延迟（30秒）
         self.group_size = 10  # 每组订阅数量
         self.max_concurrent_initial_checks = 3  # 最大并发初始检查数
+        self.history: List[QueuedSubscription] = []  # 处理历史
+        self.max_history_size = 100  # 最大历史记录数
         
     def is_twitter_feed(self, url: str) -> bool:
         """检查是否为 Twitter RSSHub 订阅"""
@@ -116,6 +133,10 @@ class TwitterSubscriptionQueue:
     
     async def _process_single_subscription(self, sub: QueuedSubscription):
         """处理单个订阅"""
+        # 更新状态为处理中
+        sub.status = SubscriptionStatus.PROCESSING
+        sub.started_time = datetime.now()
+        
         try:
             logger.info(f"Processing Twitter subscription: {sub.feed_url}")
             
@@ -130,6 +151,8 @@ class TwitterSubscriptionQueue:
             
             if result and result.get('sub'):
                 # 订阅成功
+                sub.status = SubscriptionStatus.SUCCESS
+                sub.completed_time = datetime.now()
                 logger.info(f"Successfully created Twitter subscription: {sub.feed_url}")
                 
                 # 发送成功通知（如果不是静默模式）
@@ -148,6 +171,9 @@ class TwitterSubscriptionQueue:
             else:
                 # 订阅失败
                 error_msg = result.get('msg', 'Unknown error') if result else 'Unknown error'
+                sub.status = SubscriptionStatus.FAILED
+                sub.completed_time = datetime.now()
+                sub.error_message = error_msg
                 logger.error(f"Failed to create Twitter subscription {sub.feed_url}: {error_msg}")
                 
                 # 发送失败通知
@@ -162,18 +188,75 @@ class TwitterSubscriptionQueue:
             logger.info(f"Processed Twitter subscription: {sub.feed_url}")
             
         except Exception as e:
+            sub.status = SubscriptionStatus.FAILED
+            sub.completed_time = datetime.now()
+            sub.error_message = str(e)
             logger.error(f"Error processing Twitter subscription {sub.feed_url}: {e}")
+        
+        finally:
+            # 无论成功还是失败，都添加到历史记录
+            self.add_to_history(sub)
     
     def get_queue_status(self) -> Dict:
         """获取队列状态"""
+        # 统计各状态的订阅数量
+        status_counts = {status.value: 0 for status in SubscriptionStatus}
+        for sub in self.queue:
+            status_counts[sub.status.value] += 1
+        for sub in self.history:
+            status_counts[sub.status.value] += 1
+        
         return {
             'queue_size': len(self.queue),
             'processing': self.processing,
             'delay_between_groups': self.delay_between_groups,
             'delay_within_group': self.delay_within_group,
             'group_size': self.group_size,
-            'max_concurrent_initial_checks': self.max_concurrent_initial_checks
+            'max_concurrent_initial_checks': self.max_concurrent_initial_checks,
+            'status_counts': status_counts,
+            'history_size': len(self.history)
         }
+    
+    def get_subscription_details(self, limit: int = 20) -> List[Dict]:
+        """获取订阅详细信息"""
+        details = []
+        
+        # 获取队列中的订阅
+        for sub in list(self.queue)[-limit:]:
+            details.append({
+                'feed_url': sub.feed_url,
+                'title': sub.title,
+                'user_id': sub.user_id,
+                'status': sub.status.value,
+                'added_time': sub.added_time,
+                'started_time': sub.started_time,
+                'completed_time': sub.completed_time,
+                'error_message': sub.error_message
+            })
+        
+        # 获取最近的处理历史
+        for sub in self.history[-limit:]:
+            details.append({
+                'feed_url': sub.feed_url,
+                'title': sub.title,
+                'user_id': sub.user_id,
+                'status': sub.status.value,
+                'added_time': sub.added_time,
+                'started_time': sub.started_time,
+                'completed_time': sub.completed_time,
+                'error_message': sub.error_message
+            })
+        
+        # 按添加时间排序
+        details.sort(key=lambda x: x['added_time'], reverse=True)
+        return details[:limit]
+    
+    def add_to_history(self, sub: QueuedSubscription):
+        """添加到历史记录"""
+        self.history.append(sub)
+        # 限制历史记录大小
+        if len(self.history) > self.max_history_size:
+            self.history = self.history[-self.max_history_size:]
 
 
 # 全局实例
