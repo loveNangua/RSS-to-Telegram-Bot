@@ -133,8 +133,10 @@ class Message:
         self.silent = silent
         self.tries = 0
 
+        # Don't set video attributes with invalid values (0, 0, 0)
+        # Let Telegram handle video metadata extraction automatically
         self.attributes = (
-            (types.DocumentAttributeVideo(0, 0, 0),)
+            None  # Let Telegram extract video metadata automatically
             if media_type == VIDEO
             else (
                 (types.DocumentAttributeAnimated(),)
