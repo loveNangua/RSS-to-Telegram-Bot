@@ -14,7 +14,7 @@ from ..i18n import i18n
 from ..scheduler.twitter_sub_queue import twitter_sub_queue
 
 
-@command_gatekeeper(only_manager=False)
+@command_gatekeeper(only_manager=True)
 async def cmd_twitter_queue(
         event: TypeEventMsgHint,
         args: str = '',
@@ -29,11 +29,6 @@ async def cmd_twitter_queue(
     /twitter_queue detailed - 显示详细订阅列表
     /twitter_queue history - 显示处理历史
     """
-    
-    # 只有管理员可以使用此命令
-    if event.chat_id not in env.MANAGER:
-        await event.respond("This command is only available for bot managers.")
-        return
     
     # 解析参数
     show_detailed = args.lower() in ['detailed', 'detail', 'full']

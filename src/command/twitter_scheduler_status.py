@@ -14,7 +14,7 @@ from ..i18n import i18n
 from ..scheduler.twitter_scheduler import twitter_scheduler
 
 
-@command_gatekeeper(only_manager=False)
+@command_gatekeeper(only_manager=True)
 async def cmd_twitter_scheduler_status(
         event: TypeEventMsgHint,
         *_,
@@ -23,13 +23,9 @@ async def cmd_twitter_scheduler_status(
 ):
     """查看 Twitter 调度器状态"""
     
-    # 只有管理员可以使用此命令
-    if event.chat_id not in env.MANAGER:
-        await event.respond("This command is only available for bot managers.")
-        return
-    
-    # 获取调度器状态
-    stats = twitter_scheduler.get_stats()
+    # 获取调度器状态 - 在后台线程中运行以避免阻塞
+    from ..aio_helper import run_async
+    stats = await run_async(twitter_scheduler.get_stats)
     
     # 检查调度器是否在运行
     is_running = False
