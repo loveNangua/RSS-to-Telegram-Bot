@@ -133,10 +133,8 @@ class Message:
         self.silent = silent
         self.tries = 0
 
-        # For videos, use DocumentAttributeFilename to help Telegram identify the file type
-        # This avoids the invalid DocumentAttributeVideo(0, 0, 0) issue
         self.attributes = (
-            (types.DocumentAttributeFilename("video.mp4"),)  # Generic filename helps Telegram identify as video
+            (types.DocumentAttributeVideo(0, 0, 0),)
             if media_type == VIDEO
             else (
                 (types.DocumentAttributeAnimated(),)
