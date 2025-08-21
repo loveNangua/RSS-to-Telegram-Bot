@@ -16,4 +16,4 @@
 
 from __future__ import annotations
 
-from . import opml, sub, utils, customization, administration, misc, twitter_queue, twitter_scheduler_status
+from . import opml, sub, utils, customization, administration, misc

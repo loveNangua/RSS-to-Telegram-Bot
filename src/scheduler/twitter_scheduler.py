@@ -33,6 +33,9 @@ class DynamicTwitterScheduler:
         # 初始化槽分配
         self._init_slots()
         
+        # 存储本周期更新的订阅源
+        self.cycle_updated_feeds: List[tuple] = []  # [(feed_title, feed_url, entry_count)]
+        
     def _init_slots(self):
         """初始化时间槽"""
         for i in range(self.slot_count):
@@ -211,7 +214,10 @@ class DynamicTwitterScheduler:
                     logger.info(f"Slot {slot_id} completed, waiting {self.slot_interval/60:.1f} minutes...")
                     await asyncio.sleep(self.slot_interval)
             
-            # 所有槽完成后，等待一段时间再开始下一轮
+            # 所有槽完成后，输出更新报告
+            await self._output_cycle_report()
+            
+            # 等待一段时间再开始下一轮
             logger.info("All slots completed, starting new cycle...")
             await asyncio.sleep(60)  # 1分钟后开始新一轮
     
@@ -305,6 +311,64 @@ class DynamicTwitterScheduler:
             }
         
         return stats
+    
+    def record_update(self, feed_title: str, feed_url: str, entry_count: int):
+        """记录订阅源更新"""
+        self.cycle_updated_feeds.append((feed_title, feed_url, entry_count))
+    
+    async def _output_cycle_report(self):
+        """输出本周期的更新报告"""
+        if self.cycle_updated_feeds:
+            update_count = len(self.cycle_updated_feeds)
+            total_entries = sum(count for _, _, count in self.cycle_updated_feeds)
+            
+            # 检查系统语言
+            try:
+                from .. import env, db
+                is_chinese = env.MANAGER and db.effective_utils.EffectiveOptions.default_lang == 'zh-Hans'
+            except:
+                is_chinese = False
+            
+            if is_chinese:
+                logger.info("="*30)
+                logger.info("📢 Twitter RSS 更新报告")
+                logger.info(f"更新的订阅源数量: {update_count}")
+                logger.info(f"新文章总数: {total_entries}")
+                logger.info("更新详情:")
+                
+                for title, link, entry_count in sorted(self.cycle_updated_feeds, key=lambda x: x[2], reverse=True):
+                    logger.info(f"  • {title}: {entry_count} 篇新文章")
+                    logger.info(f"    {link}")
+                
+                logger.info("="*30)
+            else:
+                logger.info("="*30)
+                logger.info("📢 Twitter RSS Update Report")
+                logger.info(f"Total feeds updated: {update_count}")
+                logger.info(f"Total new entries: {total_entries}")
+                logger.info("Update details:")
+                
+                for title, link, entry_count in sorted(self.cycle_updated_feeds, key=lambda x: x[2], reverse=True):
+                    entry_text = "new entry" if entry_count == 1 else "new entries"
+                    logger.info(f"  • {title}: {entry_count} {entry_text}")
+                    logger.info(f"    {link}")
+                
+                logger.info("="*30)
+        else:
+            # 没有更新
+            try:
+                from .. import env, db
+                is_chinese = env.MANAGER and db.effective_utils.EffectiveOptions.default_lang == 'zh-Hans'
+            except:
+                is_chinese = False
+            
+            if is_chinese:
+                logger.info("本周期没有检测到 Twitter 订阅更新")
+            else:
+                logger.info("No Twitter feed updates detected in this cycle")
+        
+        # 清空下一周期
+        self.cycle_updated_feeds.clear()
 
 
 # 全局调度器实例

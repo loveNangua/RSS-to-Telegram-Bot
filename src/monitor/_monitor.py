@@ -64,6 +64,9 @@ class Monitor(Singleton):
         
         # Twitter scheduler initialization
         self._twitter_scheduler_initialized = False
+        
+        # Store updated feeds in each round (for non-Twitter feeds)
+        self._current_round_updated_feeds: list[tuple[str, str, int]] = []  # (feed_title, feed_link, entry_count)
 
     def _update_lock_up_period_cb(self, key: str, value: int, expected_key: str = 'minimal_interval'):
         if key != expected_key:
@@ -249,9 +252,47 @@ class Monitor(Singleton):
         now = datetime.now(timezone.utc)
         await self._do_monitor_a_feed(feed, now)
 
+    def _output_round_report(self):
+        """Output the update report for non-Twitter feeds in this monitoring round"""
+        
+        if self._current_round_updated_feeds:
+            update_count = len(self._current_round_updated_feeds)
+            total_entries = sum(count for _, _, count in self._current_round_updated_feeds)
+            
+            # Check if system language is Chinese
+            is_chinese = env.MANAGER and db.effective_utils.EffectiveOptions.default_lang == 'zh-Hans'
+            
+            if is_chinese:
+                logger.info(f"===== 非Twitter RSS 更新报告 =====")
+                logger.info(f"更新的订阅源数量: {update_count}")
+                logger.info(f"新文章总数: {total_entries}")
+                logger.info(f"更新的订阅源:")
+                
+                for title, link, entry_count in sorted(self._current_round_updated_feeds, key=lambda x: x[2], reverse=True):
+                    logger.info(f"  • {title}: {entry_count} 篇新文章 - {link}")
+                
+                logger.info(f"===================================")
+            else:
+                logger.info(f"===== Non-Twitter RSS Update Report =====")
+                logger.info(f"Total feeds updated: {update_count}")
+                logger.info(f"Total new entries: {total_entries}")
+                logger.info(f"Updated feeds:")
+                
+                for title, link, entry_count in sorted(self._current_round_updated_feeds, key=lambda x: x[2], reverse=True):
+                    entry_text = "new entry" if entry_count == 1 else "new entries"
+                    logger.info(f"  • {title}: {entry_count} {entry_text} - {link}")
+                
+                logger.info(f"==========================================")
+        
+        # Clear for next round
+        self._current_round_updated_feeds.clear()
+    
     async def run_periodic_task(self):
         self._stat.print_summary()
         Notifier.on_periodic_task()
+        
+        # Output report for previous round's non-Twitter feeds
+        self._output_round_report()
         
         # 初始化 Twitter 调度器（仅第一次）
         if not self._twitter_scheduler_initialized:
@@ -432,4 +473,21 @@ class Monitor(Singleton):
         updated_entries.reverse()  # send the earliest entry first
         await Notifier(feed=feed, subs=subs, entries=updated_entries).notify_all()
         stat.updated()
+        
+        # Collect update information
+        # For Twitter feeds, record to scheduler
+        if twitter_scheduler.is_twitter_feed(feed.link):
+            twitter_scheduler.record_update(
+                feed.title or 'Unknown Feed',
+                feed.link,
+                len(updated_entries)
+            )
+        else:
+            # For non-Twitter feeds, store for periodic report
+            self._current_round_updated_feeds.append((
+                feed.title or 'Unknown Feed',
+                feed.link,
+                len(updated_entries)
+            ))
+        
         return

@@ -20,6 +20,7 @@ from collections.abc import Iterable, Sequence
 
 import asyncio
 import re
+import hashlib
 from collections import defaultdict
 from itertools import chain, repeat
 from telethon import Button
@@ -50,27 +51,125 @@ def construct_hashtags(tags: Union[Iterable[str], str]) -> str:
     return '#' + ' #'.join(tags)
 
 
+def _normalize_content_for_similarity(content: str) -> str:
+    """
+    标准化内容用于相似度检测
+    移除RT前缀、多余空格、特殊字符等，保留核心内容
+    """
+    if not content:
+        return ''
+    
+    # 移除HTML标签（如<br>）
+    content = re.sub(r'<[^>]+>', ' ', content)
+    
+    # 移除HTML实体（如&lt; &gt; &amp;）
+    content = re.sub(r'&[a-z]+;', ' ', content)
+    
+    # 移除RT前缀和用户名（支持多种格式）
+    # 格式1: "RT 用户名: 内容"
+    content = re.sub(r'^RT\s+[^:]+:\s*', '', content, flags=re.IGNORECASE)
+    # 格式2: "RT 用户名 内容"（没有冒号，RT后跟用户名和空格/换行）
+    content = re.sub(r'^RT\s+\S+\s+', '', content, flags=re.IGNORECASE)
+    
+    # 移除多余的空格和换行
+    content = re.sub(r'\s+', ' ', content).strip()
+    
+    # 移除URL（保留核心文本内容）
+    content = re.sub(r'https?://\S+', '', content)
+    
+    # 移除@用户名（但保留核心内容）
+    content = re.sub(r'@\w+', '', content)
+    
+    # 标准化标点符号
+    content = re.sub(r'[,.!?;:…]+', '', content)
+    
+    return content.lower().strip()
+
+
+def _calculate_content_hash(entry: dict) -> Optional[str]:
+    """
+    计算条目的内容哈希（用于相似度检测）
+    基于标准化后的标题和描述内容
+    """
+    # 提取关键内容字段
+    title = entry.get('title', '') or ''
+    summary = entry.get('summary', '') or ''
+    
+    # 获取内容的第一个值
+    content_value = ''
+    content_list = entry.get('content', [])
+    if content_list:
+        content_value = next(filter(None, map(lambda c: c.get('value', ''), content_list)), '')
+    
+    # 先分别标准化每个字段，然后合并（避免字段间干扰）
+    normalized_title = _normalize_content_for_similarity(title)
+    normalized_summary = _normalize_content_for_similarity(summary)
+    normalized_content = _normalize_content_for_similarity(content_value)
+    
+    # 合并标准化后的内容（使用统一的分隔符）
+    combined_normalized = f"{normalized_title} {normalized_summary} {normalized_content}".strip()
+    
+    # 进一步清理合并后的内容
+    combined_normalized = re.sub(r'\s+', ' ', combined_normalized).strip()
+    
+    if not combined_normalized or len(combined_normalized) < 10:  # 内容太短，不进行相似度检测
+        return None
+    
+    # 使用MD5生成内容哈希（更适合相似度检测）
+    return hashlib.md5(combined_normalized.encode('utf-8')).hexdigest()[:12]  # 只取前12位，节省空间
+
+
 def calculate_update(old_hashes: Optional[Sequence[str]], entries: Sequence[dict]) \
         -> tuple[Iterable[str], Iterable[dict]]:
-    new_hashes_d = {
-        hex(crc32(guid.encode('utf-8')))[2:]: entry
-        for guid, entry in (
-            (
-                entry.get('guid') or entry.get('link') or entry.get('title') or entry.get('summary')
-                or (
-                    # the first non-empty content.value
-                    next(filter(None, map(lambda content: content.get('value'), entry.get('content', []))), '')
-                ),
-                entry
+    """
+    计算需要更新的RSS条目，支持双重去重：
+    1. 基于GUID的精确去重（原有机制）
+    2. 基于内容的相似度去重（新增机制）
+    """
+    # 第一阶段：构建基于GUID的哈希字典（原有逻辑）
+    guid_hash_to_entry = {}
+    content_hashes_seen = set()  # 用于内容去重
+    
+    for entry in entries:
+        # 获取GUID标识符（优先级：guid > link > title > summary > content）
+        guid = (
+            entry.get('guid') or entry.get('link') or entry.get('title') or entry.get('summary')
+            or (
+                # the first non-empty content.value
+                next(filter(None, map(lambda content: content.get('value'), entry.get('content', []))), '')
             )
-            for entry in entries
         )
-        if guid
-    }
+        
+        if not guid:
+            continue
+            
+        # 计算GUID哈希（原有机制）
+        guid_hash = hex(crc32(guid.encode('utf-8')))[2:]
+        
+        # 计算内容哈希（新增机制）
+        content_hash = _calculate_content_hash(entry)
+        
+        # 跳过重复内容（基于内容相似度）
+        if content_hash and content_hash in content_hashes_seen:
+            # 内容重复，跳过这个条目
+            continue
+            
+        # 记录这个条目
+        guid_hash_to_entry[guid_hash] = entry
+        if content_hash:
+            content_hashes_seen.add(content_hash)
+    
+    # 第二阶段：与历史记录合并（原有逻辑）
     if old_hashes:
-        new_hashes_d.update(zip(old_hashes, repeat(None)))
-    new_hashes = new_hashes_d.keys()
-    updated_entries = filter(None, new_hashes_d.values())
+        # 将历史哈希添加到字典中（值为None表示已处理过）
+        for old_hash in old_hashes:
+            if old_hash not in guid_hash_to_entry:
+                guid_hash_to_entry[old_hash] = None
+    
+    # 第三阶段：生成结果
+    new_hashes = guid_hash_to_entry.keys()
+    updated_entries = filter(None, guid_hash_to_entry.values())
+    
     return new_hashes, updated_entries
 
 
