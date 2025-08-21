@@ -39,10 +39,13 @@ def extract_core_content(text):
 test_cases = [
     ("RT 小韩: 太可爱了🥳 我玩玩玩玩玩玩 完整视频在🚪视频号 #4i #四爱 #龟头责", "RT with colon"),
     ("太可爱了🥳 我玩玩玩玩玩玩 完整视频在🚪视频号 #4i #四爱 #龟头责", "Original"),
-    ("RT 小韩<br>太可爱了🥳<br>我玩玩玩玩玩玩<br>完整视频在🚪视频号", "RT with br tag"),
-    ("RT 小狗质检员: 逃不掉就只能乖乖掰开屁股被打啦 #spank", "RT 小狗质检员"),
-    ("RT 小狗质检员<br>逃不掉就只能乖乖掰开屁股被打啦 #spank", "RT without colon"),
+    ("RT 小韩<br>太可爱了🥳<br>我玩玩玩玩玩玩<br>完整视频在🚪视频号<br>#4i #四爱 #龟头责", "RT with br tag"),
+    ("RT 小狗质检员: 逃不掉就只能乖乖掰开屁股被打啦 #spank", "RT 小狗质检员 with colon"),
+    ("RT 小狗质检员<br>逃不掉就只能乖乖掰开屁股被打啦 #spank", "RT 小狗质检员 without colon"),
     ("逃不掉就只能乖乖掰开屁股被打啦 #spank", "Original spank"),
+    ("RT 小狗质检员 逃不掉就只能乖乖掰开屁股被打啦 #spank", "RT with space only"),
+    ("转发自 @某用户: 这是完全不同的内容 #test", "Different content 1"),
+    ("这是完全不同的内容 #test", "Different content 2"),
 ]
 
 print("测试核心内容提取:")
