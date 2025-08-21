@@ -122,16 +122,28 @@ def _calculate_content_hash(entry: dict) -> Optional[str]:
 def calculate_update(old_hashes: Optional[Sequence[str]], entries: Sequence[dict]) \
         -> tuple[Iterable[str], Iterable[dict]]:
     """
-    计算需要更新的RSS条目，支持双重去重：
-    1. 基于GUID的精确去重（原有机制）
-    2. 基于内容的相似度去重（新增机制）
-    """
-    # 第一阶段：构建基于GUID的哈希字典（原有逻辑）
-    guid_hash_to_entry = {}
-    content_hashes_seen = set()  # 用于内容去重
+    计算需要更新的RSS条目，使用智能去重系统
     
-    for entry in entries:
-        # 获取GUID标识符（优先级：guid > link > title > summary > content）
+    这个函数现在使用更强大的去重策略：
+    1. 智能内容相似度检测
+    2. 自动识别和处理各种RT/转发格式
+    3. 基于核心内容的去重，不受格式影响
+    """
+    # 导入智能去重器
+    from .content_dedup import ContentDeduplicator
+    
+    # 创建去重器实例
+    deduplicator = ContentDeduplicator(similarity_threshold=0.85)
+    
+    # 对条目进行智能去重
+    entries_list = list(entries)
+    deduped_entries = deduplicator.deduplicate_entries(entries_list)
+    
+    # 构建基于GUID的哈希字典（保留原有逻辑以兼容历史记录）
+    guid_hash_to_entry = {}
+    
+    for entry in deduped_entries:
+        # 获取GUID标识符
         guid = (
             entry.get('guid') or entry.get('link') or entry.get('title') or entry.get('summary')
             or (
@@ -142,31 +154,18 @@ def calculate_update(old_hashes: Optional[Sequence[str]], entries: Sequence[dict
         
         if not guid:
             continue
-            
-        # 计算GUID哈希（原有机制）
+        
+        # 计算GUID哈希
         guid_hash = hex(crc32(guid.encode('utf-8')))[2:]
-        
-        # 计算内容哈希（新增机制）
-        content_hash = _calculate_content_hash(entry)
-        
-        # 跳过重复内容（基于内容相似度）
-        if content_hash and content_hash in content_hashes_seen:
-            # 内容重复，跳过这个条目
-            continue
-            
-        # 记录这个条目
         guid_hash_to_entry[guid_hash] = entry
-        if content_hash:
-            content_hashes_seen.add(content_hash)
     
-    # 第二阶段：与历史记录合并（原有逻辑）
+    # 与历史记录合并
     if old_hashes:
-        # 将历史哈希添加到字典中（值为None表示已处理过）
         for old_hash in old_hashes:
             if old_hash not in guid_hash_to_entry:
                 guid_hash_to_entry[old_hash] = None
     
-    # 第三阶段：生成结果
+    # 生成结果
     new_hashes = guid_hash_to_entry.keys()
     updated_entries = filter(None, guid_hash_to_entry.values())
     
