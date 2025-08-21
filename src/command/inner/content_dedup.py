@@ -69,7 +69,8 @@ class ContentDeduplicator:
         text = re.sub(r'\s+', ' ', text)
         
         # 移除标点符号（但保留表情）
-        text = re.sub(r'[,.!?;:"""''`~\-_=+\[\]{}()|\\/<>*&^%$#@]+', ' ', text)
+        # 使用原始字符串和正确的转义
+        text = re.sub(r'[,.!?;:"""''`~\-_=+\[\]{}()|/<>*&^%$#@\\]+', ' ', text)
         
         # 最终清理
         text = text.strip().lower()

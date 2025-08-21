@@ -449,7 +449,11 @@ class Monitor(Singleton):
 
             logger.debug(f'Updated: {feed.link}')
             feed.last_modified = wr.last_modified
-            feed.entry_hashes = list(islice(new_hashes, max(len(rss_d.entries) * 2, 100))) or None
+            # 保留更多历史哈希记录，避免频繁更新导致的重复
+            # 保留最近300个条目的哈希（对于高频更新的源大约能覆盖1-2天的历史）
+            # 但如果新哈希数量很多，则动态调整为新哈希数量的3倍
+            max_hashes_to_keep = max(300, len(new_hashes), len(rss_d.entries) * 3)
+            feed.entry_hashes = list(islice(new_hashes, max_hashes_to_keep)) or None
             feed_updated_fields.update({'last_modified', 'entry_hashes'})
         finally:
             if feed.error_count != new_error_count:
